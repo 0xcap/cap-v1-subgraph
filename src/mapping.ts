@@ -1,4 +1,4 @@
-import { BigInt } from "@graphprotocol/graph-ts"
+import { BigInt, store, log, ethereum } from "@graphprotocol/graph-ts"
 import {
   Trading,
   AddMargin,
@@ -14,31 +14,69 @@ import {
   Staked,
   VaultUpdated
 } from "../generated/Trading/Trading"
-import { ExampleEntity } from "../generated/schema"
+import { Vault, Product, Position, Trade, VaultDayData } from "../generated/schema"
 
-export function handleAddMargin(event: AddMargin): void {
-  // Entities can be loaded from the store using a string ID; this ID
-  // needs to be unique across all entities of the same type
-  let entity = ExampleEntity.load(event.transaction.from.toHex())
+export const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
 
-  // Entities only exist after they have been saved to the store;
-  // `null` checks allow to create entities on demand
-  if (entity == null) {
-    entity = new ExampleEntity(event.transaction.from.toHex())
+export const ZERO_BI = BigInt.fromI32(0)
+export const ONE_BI = BigInt.fromI32(1)
+export const UNIT_BI = BigInt.fromI32(100000000);
 
-    // Entity fields can be set using simple assignments
-    entity.count = BigInt.fromI32(0)
+function getVaultDayData(event: ethereum.Event): VaultDayData {
+
+  let timestamp = event.block.timestamp.toI32();
+  let day_id = timestamp / 86400;
+  let vaultDayData = VaultDayData.load(day_id.toString())
+
+  if (vaultDayData == null) {
+    vaultDayData = new VaultDayData(day_id.toString())
+    vaultDayData.date = BigInt.fromI32(day_id * 86400)
+    vaultDayData.cumulativeVolume = ZERO_BI
+    vaultDayData.cumulativeMargin = ZERO_BI
+    vaultDayData.positionCount = ZERO_BI
+    vaultDayData.tradeCount = ZERO_BI
+    vaultDayData.save()
   }
 
-  // BigInt and BigDecimal math are supported
-  entity.count = entity.count + BigInt.fromI32(1)
+  return vaultDayData!;
 
-  // Entity fields can be set based on event parameters
-  entity.positionId = event.params.positionId
-  entity.user = event.params.user
+}
 
-  // Entities can be written to the store with `.save()`
-  entity.save()
+export function handleAddMargin(event: AddMargin): void {
+
+  let position = Position.load(event.params.positionId.toString())
+
+  if (position) {
+
+    position.margin = event.params.newMargin
+    position.leverage = event.params.newLeverage
+
+    position.updatedAtTimestamp = event.block.timestamp
+    position.updatedAtBlockNumber = event.block.number
+
+    // volume updates
+
+    let vault = Vault.load((1).toString())
+    vault.cumulativeMargin = vault.cumulativeMargin.plus(event.params.margin)
+
+    let vaultDayData = getVaultDayData(event)
+    vaultDayData.cumulativeMargin = vaultDayData.cumulativeMargin.plus(event.params.margin)
+
+    let product = Product.load((position.productId).toString())
+    product.cumulativeMargin = product.cumulativeMargin.plus(event.params.margin)
+
+    position.save()
+    vault.save()
+    vaultDayData.save()
+    product.save()
+
+  }
+
+  // remove
+  //store.remove('ExampleEntity', id);
+
+  // log
+  //log.info('log here {},{}', [value1,value2]);
 
   // Note: If a handler doesn't require existing field values, it is faster
   // _not_ to load the entity from the store. Instead, create it fresh with
@@ -68,24 +106,248 @@ export function handleAddMargin(event: AddMargin): void {
   // - contract.protocolFee(...)
 }
 
-export function handleClosePosition(event: ClosePosition): void {}
+export function handleClosePosition(event: ClosePosition): void {
 
-export function handleNewPosition(event: NewPosition): void {}
+  let position = Position.load(event.params.positionId.toString())
 
-export function handleNewPositionSettled(event: NewPositionSettled): void {}
+  if (position) {
+
+    let vault = Vault.load((1).toString())
+    let vaultDayData = getVaultDayData(event)
+    let product = Product.load((event.params.productId).toString())
+
+    vault.tradeCount = vault.tradeCount.plus(ONE_BI)
+
+    // create new trade
+    let trade = new Trade(vault.tradeCount.toString())
+    trade.txHash = event.transaction.hash.toHexString()
+    
+    trade.positionId = event.params.positionId
+    trade.productId = event.params.productId
+    trade.leverage = event.params.leverage
+    
+    trade.entryPrice = event.params.entryPrice
+    trade.closePrice = event.params.price
+
+    trade.margin = event.params.margin
+    trade.owner = event.params.user
+
+    trade.pnl = event.params.pnl
+    trade.pnlIsNegative = event.params.pnlIsNegative
+    trade.wasLiquidated = event.params.wasLiquidated
+    trade.isFullClose = event.params.isFullClose
+
+    trade.isLong = position.isLong
+
+    trade.timestamp = event.block.timestamp
+    trade.blockNumber = event.block.number
+
+    // Update position
+
+    if (event.params.isFullClose) {
+      store.remove('Position', event.params.positionId.toString())
+      vault.positionCount = vault.positionCount.minus(ONE_BI)
+      product.positionCount = vault.positionCount.minus(ONE_BI)
+    } else {
+      // Update position with partial close, e.g. subtract margin
+      position.margin = position.margin.minus(event.params.margin)
+      position.save()
+    }
+
+    // update volumes
+
+    let amount = event.params.margin.times(event.params.leverage).div(UNIT_BI)
+
+    vault.cumulativeVolume = vault.cumulativeVolume.plus(amount)
+    vault.cumulativeMargin = vault.cumulativeMargin.plus(event.params.margin)
+
+    vaultDayData.cumulativeVolume = vaultDayData.cumulativeVolume.plus(amount)
+    vaultDayData.cumulativeMargin = vaultDayData.cumulativeMargin.plus(event.params.margin)
+    vaultDayData.tradeCount = vaultDayData.tradeCount.plus(ONE_BI)
+
+    product.cumulativeVolume = product.cumulativeVolume.plus(amount)
+    product.cumulativeMargin = product.cumulativeMargin.plus(event.params.margin)
+    product.tradeCount = product.tradeCount.plus(ONE_BI)
+
+    vault.save()
+    vaultDayData.save()
+    product.save()
+
+  }
+
+}
+
+export function handleNewPosition(event: NewPosition): void {
+
+  let position = Position.load(event.params.positionId.toString())
+
+  if (position == null) {
+
+    // Create position
+    position = new Position(event.params.positionId.toString())
+
+    position.productId = event.params.productId
+    position.leverage = event.params.leverage
+    position.price = event.params.price
+    position.margin = event.params.margin
+
+    position.owner = event.params.user
+
+    position.isLong = event.params.isLong
+    position.isSettling = true
+
+    position.createdAtTimestamp = event.block.timestamp
+    position.createdAtBlockNumber = event.block.number
+
+    // volume updates
+    let amount = event.params.margin.times(event.params.leverage).div(UNIT_BI)
+
+    let vault = Vault.load((1).toString())
+    vault.cumulativeVolume = vault.cumulativeVolume.plus(amount)
+    vault.cumulativeMargin = vault.cumulativeMargin.plus(event.params.margin)
+    vault.positionCount = vault.positionCount.plus(ONE_BI)
+
+    let vaultDayData = getVaultDayData(event)
+    vaultDayData.cumulativeVolume = vaultDayData.cumulativeVolume.plus(amount)
+    vaultDayData.cumulativeMargin = vaultDayData.cumulativeMargin.plus(event.params.margin)
+    vaultDayData.positionCount = vaultDayData.positionCount.plus(ONE_BI)
+
+    let product = Product.load((event.params.productId).toString())
+    product.cumulativeVolume = product.cumulativeVolume.plus(amount)
+    product.cumulativeMargin = product.cumulativeMargin.plus(event.params.margin)
+    product.positionCount = product.positionCount.plus(ONE_BI)
+
+    position.save()
+    vault.save()
+    vaultDayData.save()
+    product.save()
+
+  }
+
+}
+
+export function handleNewPositionSettled(event: NewPositionSettled): void {
+
+  let position = Position.load(event.params.positionId.toString())
+
+  if (position) {
+
+    position.price = event.params.price
+    position.isSettling = false
+
+    position.settledAtTimestamp = event.block.timestamp
+    position.settledAtBlockNumber = event.block.number
+
+    position.save()
+
+  }
+
+}
+
+export function handleProductAdded(event: ProductAdded): void {
+
+  let product = Product.load(event.params.productId.toString())
+
+  if (product == null) {
+
+    product = new Product(event.params.productId.toString())
+
+    product.createdAtTimestamp = event.block.timestamp
+    product.createdAtBlockNumber = event.block.number
+    
+    product.cumulativePnl = ZERO_BI
+    product.cumulativeVolume = ZERO_BI
+    product.cumulativeMargin = ZERO_BI
+
+    product.positionCount = ZERO_BI
+    product.tradeCount = ZERO_BI
+
+  }
+
+  product.save()
+
+}
+
+export function handleProductUpdated(event: ProductUpdated): void {
+
+  let product = Product.load(event.params.productId.toString())
+
+  if (product) {
+    product.updatedAtTimestamp = event.block.timestamp
+    product.updatedAtBlockNumber = event.block.number
+  }
+
+  product.save()
+
+}
+
+export function handleRedeemed(event: Redeemed): void {
+
+  let vault = Vault.load((1).toString())
+
+  if (vault) {
+
+    vault.balance = vault.balance.minus(event.params.amount)
+    vault.staked = vault.staked.minus(event.params.amount)
+
+    vault.save()
+    
+  }
+
+}
+
+export function handleStaked(event: Staked): void {
+
+  let vault = Vault.load((1).toString())
+
+  if (vault) {
+
+    vault.balance = vault.balance.plus(event.params.amount)
+    vault.staked = vault.staked.plus(event.params.amount)
+
+    vault.save()
+
+  }
+
+}
+
+export function handleVaultUpdated(event: VaultUpdated): void {
+
+  let vault = Vault.load((1).toString())
+
+  if (vault == null) {
+
+    vault = new Vault((1).toString())
+
+    vault.createdAtTimestamp = event.block.timestamp
+    vault.createdAtBlockNumber = event.block.number
+
+    vault.balance = ZERO_BI
+    vault.staked = ZERO_BI
+    
+    vault.cumulativePnl = ZERO_BI
+    vault.cumulativeVolume = ZERO_BI
+    vault.cumulativeMargin = ZERO_BI
+
+    vault.positionCount = ZERO_BI
+    vault.tradeCount = ZERO_BI
+
+  }
+
+  vault.updatedAtTimestamp = event.block.timestamp
+  vault.updatedAtBlockNumber = event.block.number
+
+  vault.cap = event.params.vault.cap
+
+  vault.stakingPeriod = event.params.vault.stakingPeriod
+  vault.redemptionPeriod = event.params.vault.redemptionPeriod
+
+  vault.maxDailyDrawdown = event.params.vault.maxDailyDrawdown
+
+  vault.save()
+
+}
 
 export function handleOwnerUpdated(event: OwnerUpdated): void {}
-
-export function handlePositionLiquidated(event: PositionLiquidated): void {}
-
-export function handleProductAdded(event: ProductAdded): void {}
-
-export function handleProductUpdated(event: ProductUpdated): void {}
-
 export function handleProtocolFeeUpdated(event: ProtocolFeeUpdated): void {}
-
-export function handleRedeemed(event: Redeemed): void {}
-
-export function handleStaked(event: Staked): void {}
-
-export function handleVaultUpdated(event: VaultUpdated): void {}
+export function handlePositionLiquidated(event: PositionLiquidated): void {}
