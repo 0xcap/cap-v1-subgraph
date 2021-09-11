@@ -16,6 +16,14 @@ import {
 } from "../generated/Trading/Trading"
 import { Vault, Product, Position, Trade, VaultDayData } from "../generated/schema"
 
+/*
+Todos:
+- more product details
+- liquidation price for positions
+- user stakes listing
+- integrate in client
+*/
+
 export const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
 
 export const ZERO_BI = BigInt.fromI32(0)
@@ -118,6 +126,8 @@ export function handleClosePosition(event: ClosePosition): void {
 
     vault.tradeCount = vault.tradeCount.plus(ONE_BI)
 
+    let amount = event.params.margin.times(event.params.leverage).div(UNIT_BI)
+
     // create new trade
     let trade = new Trade(vault.tradeCount.toString())
     trade.txHash = event.transaction.hash.toHexString()
@@ -125,6 +135,8 @@ export function handleClosePosition(event: ClosePosition): void {
     trade.positionId = event.params.positionId
     trade.productId = event.params.productId
     trade.leverage = event.params.leverage
+
+    trade.amount = amount
     
     trade.entryPrice = event.params.entryPrice
     trade.closePrice = event.params.price
@@ -147,19 +159,30 @@ export function handleClosePosition(event: ClosePosition): void {
     if (event.params.isFullClose) {
       store.remove('Position', event.params.positionId.toString())
       vault.positionCount = vault.positionCount.minus(ONE_BI)
-      product.positionCount = vault.positionCount.minus(ONE_BI)
+      product.positionCount = product.positionCount.minus(ONE_BI)
     } else {
       // Update position with partial close, e.g. subtract margin
       position.margin = position.margin.minus(event.params.margin)
+      position.amount = position.amount.minus(amount)
       position.save()
     }
 
     // update volumes
 
-    let amount = event.params.margin.times(event.params.leverage).div(UNIT_BI)
-
     vault.cumulativeVolume = vault.cumulativeVolume.plus(amount)
     vault.cumulativeMargin = vault.cumulativeMargin.plus(event.params.margin)
+
+    if (trade.pnlIsNegative) {
+      vault.cumulativePnl = vault.cumulativePnl.minus(event.params.pnl)
+      vault.balance = vault.balance.plus(event.params.pnl)
+      vaultDayData.cumulativePnl = vaultDayData.cumulativePnl.minus(event.params.pnl)
+      product.cumulativePnl = product.cumulativePnl.minus(event.params.pnl)
+    } else {
+      vault.cumulativePnl = vault.cumulativePnl.plus(event.params.pnl)
+      vault.balance = vault.balance.minus(event.params.pnl)
+      vaultDayData.cumulativePnl = vaultDayData.cumulativePnl.plus(event.params.pnl)
+      product.cumulativePnl = product.cumulativePnl.plus(event.params.pnl)
+    }
 
     vaultDayData.cumulativeVolume = vaultDayData.cumulativeVolume.plus(amount)
     vaultDayData.cumulativeMargin = vaultDayData.cumulativeMargin.plus(event.params.margin)
@@ -191,6 +214,9 @@ export function handleNewPosition(event: NewPosition): void {
     position.price = event.params.price
     position.margin = event.params.margin
 
+    let amount = event.params.margin.times(event.params.leverage).div(UNIT_BI)
+    position.amount = amount
+
     position.owner = event.params.user
 
     position.isLong = event.params.isLong
@@ -200,8 +226,6 @@ export function handleNewPosition(event: NewPosition): void {
     position.createdAtBlockNumber = event.block.number
 
     // volume updates
-    let amount = event.params.margin.times(event.params.leverage).div(UNIT_BI)
-
     let vault = Vault.load((1).toString())
     vault.cumulativeVolume = vault.cumulativeVolume.plus(amount)
     vault.cumulativeMargin = vault.cumulativeMargin.plus(event.params.margin)
