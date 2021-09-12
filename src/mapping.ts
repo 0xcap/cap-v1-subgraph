@@ -16,14 +16,6 @@ import {
 } from "../generated/Trading/Trading"
 import { Vault, Product, Position, Trade, VaultDayData, Stake } from "../generated/schema"
 
-/*
-Todos:
-- more product details
-- liquidation price for positions
-- user stakes listing
-- integrate in client, stats
-*/
-
 export const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
 
 export const ZERO_BI = BigInt.fromI32(0)
@@ -263,6 +255,7 @@ export function handleClosePosition(event: ClosePosition): void {
       }
     }
 
+    trade.save()
     vault.save()
     vaultDayData.save()
     product.save()
