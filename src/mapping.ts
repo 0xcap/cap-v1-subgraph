@@ -65,18 +65,6 @@ export function handleNewPosition(event: NewPosition): void {
 
   let product = Product.load((event.params.productId).toString())
 
-  let position_price = event.params.price
-  let position_leverage = event.params.leverage
-
-  let liquidationPrice = ZERO_BI
-  if (position.isLong) {
-    liquidationPrice = position_price.minus((position_price.times(product.liquidationThreshold).times(BigInt.fromI32(10000))).div(position_leverage))
-  } else {
-    liquidationPrice = position_price.plus((position_price.times(product.liquidationThreshold).times(BigInt.fromI32(10000))).div(position_leverage))
-  }
-
-  position.liquidationPrice = liquidationPrice
-
   // volume updates
   let vault = Vault.load((1).toString())
   vault.cumulativeVolume = vault.cumulativeVolume.plus(amount)
@@ -116,6 +104,17 @@ export function handleNewPositionSettled(event: NewPositionSettled): void {
 
     position.settledAtTimestamp = event.block.timestamp
     position.settledAtBlockNumber = event.block.number
+
+    let product = Product.load((position.productId).toString())
+
+    let liquidationPrice = ZERO_BI
+    if (position.isLong) {
+      liquidationPrice = position.price.minus((position.price.times(product.liquidationThreshold).times(BigInt.fromI32(10000))).div(position.leverage))
+    } else {
+      liquidationPrice = position.price.plus((position.price.times(product.liquidationThreshold).times(BigInt.fromI32(10000))).div(position.leverage))
+    }
+
+    position.liquidationPrice = liquidationPrice
 
     position.save()
 
