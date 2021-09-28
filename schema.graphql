@@ -27,35 +27,12 @@ type Vault @entity {
 type Product @entity {
   id: ID! # product id
 
-  feed: Bytes!
-  maxLeverage: BigInt!
-  fee: BigInt!
-
-  isActive: Boolean!
-
-  maxExposure: BigInt!
-  openInterestLong: BigInt!
-  openInterestShort: BigInt!
-
-  interest: BigInt!
-  settlementTime: BigInt!
-  minTradeDuration: BigInt!
-
-  liquidationThreshold: BigInt!
-  liquidationBounty: BigInt!
-
   cumulativePnl: BigInt
   cumulativeVolume: BigInt
   cumulativeMargin: BigInt
 
   positionCount: BigInt
   tradeCount: BigInt
-
-  createdAtTimestamp: BigInt
-  createdAtBlockNumber: BigInt
-
-  updatedAtTimestamp: BigInt
-  updatedAtBlockNumber: BigInt
 
 }
 
@@ -71,11 +48,8 @@ type Position @entity { # open position
   amount: BigInt
 
   owner: Bytes!
-
-  liquidationPrice: BigInt
   
   isLong: Boolean!
-  isSettling: Boolean!
 
   createdAtTimestamp: BigInt!
   createdAtBlockNumber: BigInt!
@@ -135,15 +109,6 @@ type VaultDayData @entity {
 
 }
 
-type Stake @entity {
-
-  id: ID! #stakeId
-
-  owner: Bytes
-  amount: BigInt
-  timestamp: BigInt
-
-}
 
 #type User @entity {
 #  id: ID! # trader address, to fetch / mappings see https://github.com/perpetual-protocol/perp-position-subgraph/blob/master/src/mappings/helper.ts#L133
