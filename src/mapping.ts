@@ -22,6 +22,10 @@ export const ZERO_BI = BigInt.fromI32(0)
 export const ONE_BI = BigInt.fromI32(1)
 export const UNIT_BI = BigInt.fromI32(100000000)
 
+export const LIQUIDATION_THRESHOLD = BigInt.fromI32(8000)
+
+// TODO: trade duration, liquidation price
+
 function getVaultDayData(event: ethereum.Event): VaultDayData {
 
   let timestamp = event.block.timestamp.toI32()
@@ -78,6 +82,15 @@ export function handleNewPosition(event: NewPosition): void {
 
   }
 
+  let liquidationPrice = ZERO_BI
+  if (position.isLong) {
+    liquidationPrice = position.price.minus((position.price.times(LIQUIDATION_THRESHOLD).times(BigInt.fromI32(10000))).div(position.leverage))
+  } else {
+    liquidationPrice = position.price.plus((position.price.times(LIQUIDATION_THRESHOLD).times(BigInt.fromI32(10000))).div(position.leverage))
+  }
+
+  position.liquidationPrice = liquidationPrice
+
   // volume updates
   let vault = Vault.load((1).toString())
   vault.cumulativeVolume = vault.cumulativeVolume.plus(amount)
@@ -122,6 +135,15 @@ export function handleAddMargin(event: AddMargin): void {
 
     let product = Product.load((position.productId).toString())
     product.cumulativeMargin = product.cumulativeMargin.plus(event.params.margin)
+
+    let liquidationPrice = ZERO_BI
+    if (position.isLong) {
+      liquidationPrice = position.price.minus((position.price.times(LIQUIDATION_THRESHOLD).times(BigInt.fromI32(10000))).div(position.leverage))
+    } else {
+      liquidationPrice = position.price.plus((position.price.times(LIQUIDATION_THRESHOLD).times(BigInt.fromI32(10000))).div(position.leverage))
+    }
+
+    position.liquidationPrice = liquidationPrice
 
     position.save()
     vault.save()
@@ -168,6 +190,8 @@ export function handleClosePosition(event: ClosePosition): void {
     trade.isFullClose = event.params.isFullClose
 
     trade.isLong = position.isLong
+
+    trade.duration = event.block.timestamp.minus(position.createdAtTimestamp)
 
     trade.timestamp = event.block.timestamp
     trade.blockNumber = event.block.number

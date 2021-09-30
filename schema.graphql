@@ -53,9 +53,6 @@ type Position @entity { # open position
 
   createdAtTimestamp: BigInt!
   createdAtBlockNumber: BigInt!
-  
-  settledAtTimestamp: BigInt
-  settledAtBlockNumber: BigInt
 
   updatedAtTimestamp: BigInt
   updatedAtBlockNumber: BigInt
@@ -89,6 +86,8 @@ type Trade @entity { # closed position
   wasLiquidated: Boolean!
   isFullClose: Boolean!
 
+  duration: BigInt!
+  
   timestamp: BigInt!
   blockNumber: BigInt!
 
