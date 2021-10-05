@@ -72,6 +72,7 @@ type Trade @entity { # closed position
 
   isLong: Boolean!
   
+  fee: BigInt!
   pnl: BigInt!
 
   pnlIsNegative: Boolean!

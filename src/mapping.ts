@@ -179,6 +179,7 @@ export function handleClosePosition(event: ClosePosition): void {
     trade.margin = event.params.margin
     trade.owner = event.params.user
 
+    trade.fee = amount.times(BASE_FEE).div(BPS_SCALER)
     trade.pnl = event.params.pnl
     trade.pnlIsNegative = event.params.pnlIsNegative
     trade.wasLiquidated = event.params.wasLiquidated
