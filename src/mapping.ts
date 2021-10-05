@@ -3,18 +3,9 @@ import {
   Trading,
   AddMargin,
   ClosePosition,
-  NewPosition,
-  NewPositionSettled,
-  OwnerUpdated,
-  PositionLiquidated,
-  ProductAdded,
-  ProductUpdated,
-  ProtocolFeeUpdated,
-  Redeemed,
-  Staked,
-  VaultUpdated
+  NewPosition
 } from "../generated/Trading/Trading"
-import { Vault, Product, Position, Trade, VaultDayData, Stake } from "../generated/schema"
+import { Vault, Product, Position, Trade, VaultDayData } from "../generated/schema"
 
 export const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
 
@@ -22,7 +13,9 @@ export const ZERO_BI = BigInt.fromI32(0)
 export const ONE_BI = BigInt.fromI32(1)
 export const UNIT_BI = BigInt.fromI32(100000000)
 
+export const BASE_FEE = BigInt.fromI32(25) // 0.25%
 export const LIQUIDATION_THRESHOLD = BigInt.fromI32(8000)
+export const BPS_SCALER = BigInt.fromI32(10000)
 
 // TODO: trade duration, liquidation price
 
@@ -62,7 +55,6 @@ export function handleNewPosition(event: NewPosition): void {
   position.owner = event.params.user
 
   position.isLong = event.params.isLong
-  position.isSettling = true
 
   position.createdAtTimestamp = event.block.timestamp
   position.createdAtBlockNumber = event.block.number
@@ -93,15 +85,18 @@ export function handleNewPosition(event: NewPosition): void {
 
   // volume updates
   let vault = Vault.load((1).toString())
+  vault.cumulativeFees = vault.cumulativeFees.plus(amount.times(BASE_FEE).div(BPS_SCALER))
   vault.cumulativeVolume = vault.cumulativeVolume.plus(amount)
   vault.cumulativeMargin = vault.cumulativeMargin.plus(event.params.margin)
   vault.positionCount = vault.positionCount.plus(ONE_BI)
 
   let vaultDayData = getVaultDayData(event)
+  vaultDayData.cumulativeFees = vaultDayData.cumulativeFees.plus(amount.times(BASE_FEE).div(BPS_SCALER))
   vaultDayData.cumulativeVolume = vaultDayData.cumulativeVolume.plus(amount)
   vaultDayData.cumulativeMargin = vaultDayData.cumulativeMargin.plus(event.params.margin)
   vaultDayData.positionCount = vaultDayData.positionCount.plus(ONE_BI)
 
+  product.cumulativeFees = product.cumulativeFees.plus(amount.times(BASE_FEE).div(BPS_SCALER))
   product.cumulativeVolume = product.cumulativeVolume.plus(amount)
   product.cumulativeMargin = product.cumulativeMargin.plus(event.params.margin)
   product.positionCount = product.positionCount.plus(ONE_BI)
@@ -211,6 +206,7 @@ export function handleClosePosition(event: ClosePosition): void {
 
     // update volumes
 
+    vault.cumulativeFees = vault.cumulativeFees.plus(amount.times(BASE_FEE).div(BPS_SCALER))
     vault.cumulativeVolume = vault.cumulativeVolume.plus(amount)
     vault.cumulativeMargin = vault.cumulativeMargin.plus(event.params.margin)
 
@@ -226,10 +222,12 @@ export function handleClosePosition(event: ClosePosition): void {
       product.cumulativePnl = product.cumulativePnl.plus(event.params.pnl)
     }
 
+    vaultDayData.cumulativeFees = vaultDayData.cumulativeFees.plus(amount.times(BASE_FEE).div(BPS_SCALER))
     vaultDayData.cumulativeVolume = vaultDayData.cumulativeVolume.plus(amount)
     vaultDayData.cumulativeMargin = vaultDayData.cumulativeMargin.plus(event.params.margin)
     vaultDayData.tradeCount = vaultDayData.tradeCount.plus(ONE_BI)
 
+    product.cumulativeFees = product.cumulativeFees.plus(amount.times(BASE_FEE).div(BPS_SCALER))
     product.cumulativeVolume = product.cumulativeVolume.plus(amount)
     product.cumulativeMargin = product.cumulativeMargin.plus(event.params.margin)
     product.tradeCount = product.tradeCount.plus(ONE_BI)
@@ -242,6 +240,3 @@ export function handleClosePosition(event: ClosePosition): void {
   }
 
 }
-
-export function handleOwnerUpdated(event: OwnerUpdated): void {}
-export function handlePositionLiquidated(event: PositionLiquidated): void {}

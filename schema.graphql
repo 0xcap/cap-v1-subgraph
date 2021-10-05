@@ -1,20 +1,10 @@
 type Vault @entity {
   
   id: ID! # 1
-  
-  createdAtTimestamp: BigInt!
-  createdAtBlockNumber: BigInt!
 
-  updatedAtTimestamp: BigInt
-  updatedAtBlockNumber: BigInt
-
-  cap: BigInt!
   balance: BigInt
-  staked: BigInt
-  stakingPeriod: BigInt!
-  redemptionPeriod: BigInt!
-  maxDailyDrawdown: BigInt!
 
+  cumulativeFees: BigInt
   cumulativePnl: BigInt
   cumulativeVolume: BigInt
   cumulativeMargin: BigInt
@@ -27,6 +17,7 @@ type Vault @entity {
 type Product @entity {
   id: ID! # product id
 
+  cumulativeFees: BigInt
   cumulativePnl: BigInt
   cumulativeVolume: BigInt
   cumulativeMargin: BigInt
@@ -46,6 +37,7 @@ type Position @entity { # open position
   margin: BigInt!
 
   amount: BigInt
+  liquidationPrice: BigInt
 
   owner: Bytes!
   
@@ -99,6 +91,7 @@ type VaultDayData @entity {
 
   date: BigInt! # dayStartTimestamp = dayID * 86400
 
+  cumulativeFees: BigInt
   cumulativePnl: BigInt
   cumulativeVolume: BigInt
   cumulativeMargin: BigInt
